@@ -16,6 +16,7 @@
 package software.amazon.awssdk.custom.s3.transfer.internal;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.annotations.SdkTestInternalApi;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
@@ -92,6 +93,15 @@ public final class DefaultS3TransferManager implements S3TransferManager {
             this.s3ClientConfiguration = configuration;
             return this;
         }
+
+        @Override
+        public Builder s3ClientConfiguration(Consumer<S3ClientConfiguration.Builder> builderConsumer) {
+            S3ClientConfiguration.Builder builder = S3ClientConfiguration.builder();
+            builderConsumer.accept(builder);
+            this.s3ClientConfiguration = builder.build();
+            return this;
+        }
+
 
         @Override
         public S3TransferManager build() {

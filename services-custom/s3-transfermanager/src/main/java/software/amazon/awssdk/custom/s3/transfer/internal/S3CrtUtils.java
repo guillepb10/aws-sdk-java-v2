@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Consumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
@@ -35,6 +36,7 @@ import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.awscore.DefaultAwsResponseMetadata;
+import software.amazon.awssdk.core.RequestOverrideConfiguration;
 import software.amazon.awssdk.crt.auth.credentials.CredentialsProvider;
 import software.amazon.awssdk.crt.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.crt.http.HttpHeader;
@@ -48,6 +50,8 @@ import software.amazon.awssdk.utils.http.SdkHttpUtils;
 
 @SdkInternalApi
 public final class S3CrtUtils {
+    private static final String HEADER_USER_AGENT = "User-Agent";
+    private static final String USER_AGENT_STRING = "ft/s3-transfer";
 
     private S3CrtUtils() {
     }
@@ -82,11 +86,10 @@ public final class S3CrtUtils {
                                                    .ifModifiedSince(request.ifModifiedSince())
                                                    .ifNoneMatch(request.ifNoneMatch());
 
-        if (request.overrideConfiguration().isPresent()) {
-            addRequestOverrideConfiguration(request.overrideConfiguration().get(),
-                                            getObjectBuilder::customHeaders,
+        processRequestOverrideConfiguration(request.overrideConfiguration(),
                                             getObjectBuilder::customQueryParameters);
-        }
+
+        addCustomHeaders(request.overrideConfiguration(), getObjectBuilder::customHeaders);
 
         return getObjectBuilder.build();
 
@@ -157,11 +160,11 @@ public final class S3CrtUtils {
                                                    .websiteRedirectLocation(sdkPutObject.websiteRedirectLocation());
 
 
-        if (sdkPutObject.overrideConfiguration().isPresent()) {
-            addRequestOverrideConfiguration(sdkPutObject.overrideConfiguration().get(),
-                                            putObjectBuilder::customHeaders,
+        processRequestOverrideConfiguration(sdkPutObject.overrideConfiguration(),
                                             putObjectBuilder::customQueryParameters);
-        }
+
+        addCustomHeaders(sdkPutObject.overrideConfiguration(), putObjectBuilder::customHeaders);
+
         return putObjectBuilder.build();
     }
 
@@ -222,14 +225,10 @@ public final class S3CrtUtils {
         }
     }
 
-    private static HttpHeader[] createHttpHeaders(Map<String, List<String>> headers) {
-        List<HttpHeader> crtHeaders = new ArrayList<>(headers.size());
-
+    private static void addRequestCustomHeaders(List<HttpHeader> crtHeaders, Map<String, List<String>> headers) {
         headers.forEach((key, value) -> {
             value.stream().map(val -> new HttpHeader(key, val)).forEach(crtHeaders::add);
         });
-
-        return crtHeaders.toArray(new HttpHeader[0]);
     }
 
     private static String encodedQueryString(Map<String, List<String>> rawQueryParameters) {
@@ -238,19 +237,28 @@ public final class S3CrtUtils {
                            .orElse("");
     }
 
-    private static void addRequestOverrideConfiguration(AwsRequestOverrideConfiguration requestOverrideConfiguration,
-                                                        Consumer<HttpHeader[]> headersConsumer,
-                                                        Consumer<String> queryParametersConsumer) {
-        throwExceptionForUnsupportedConfigurations(requestOverrideConfiguration);
+    private static void processRequestOverrideConfiguration(Optional<AwsRequestOverrideConfiguration> optionalConfig,
+                                                            Consumer<String> queryParametersConsumer) {
+        if (optionalConfig.isPresent()) {
+            AwsRequestOverrideConfiguration requestOverrideConfiguration = optionalConfig.get();
 
-        if (!requestOverrideConfiguration.headers().isEmpty()) {
-            HttpHeader[] httpHeaders = createHttpHeaders(requestOverrideConfiguration.headers());
-            headersConsumer.accept(httpHeaders);
+            throwExceptionForUnsupportedConfigurations(requestOverrideConfiguration);
+            if (!requestOverrideConfiguration.rawQueryParameters().isEmpty()) {
+                String encodedQueryString = encodedQueryString(requestOverrideConfiguration.rawQueryParameters());
+                queryParametersConsumer.accept(encodedQueryString);
+            }
+        }
+    }
+
+    private static void addCustomHeaders(Optional<AwsRequestOverrideConfiguration> requestOverrideConfiguration,
+                                         Consumer<HttpHeader[]> headersConsumer) {
+        List<HttpHeader> crtHeaders = new ArrayList<>();
+        crtHeaders.add(new HttpHeader(HEADER_USER_AGENT, USER_AGENT_STRING));
+
+        if (requestOverrideConfiguration.map(RequestOverrideConfiguration::headers).filter(b -> !b.isEmpty()).isPresent()) {
+            addRequestCustomHeaders(crtHeaders, requestOverrideConfiguration.get().headers());
         }
 
-        if (!requestOverrideConfiguration.rawQueryParameters().isEmpty()) {
-            String encodedQueryString = encodedQueryString(requestOverrideConfiguration.rawQueryParameters());
-            queryParametersConsumer.accept(encodedQueryString);
-        }
+        headersConsumer.accept(crtHeaders.toArray(new HttpHeader[0]));
     }
 }

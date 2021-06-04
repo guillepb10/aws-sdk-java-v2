@@ -135,11 +135,7 @@ public interface S3TransferManager extends SdkAutoCloseable {
 
         Builder s3ClientConfiguration(S3ClientConfiguration configuration);
 
-        default Builder s3ClientConfiguration(Consumer<S3ClientConfiguration.Builder> builderConsumer) {
-            S3ClientConfiguration.Builder builder = S3ClientConfiguration.builder();
-            builderConsumer.accept(builder);
-            return this;
-        }
+        Builder s3ClientConfiguration(Consumer<S3ClientConfiguration.Builder> builderConsumer);
 
         /**
          * Build an instance of {@link S3TransferManager} based on the settings supplied to this builder
